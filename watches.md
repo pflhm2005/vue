@@ -192,6 +192,96 @@ function checkComponents(options){
 
 
 
+## merge
+
+
+
+### mergeHook
+
+
+
+```javascript
+// 返回数组形式的parentVal+childVal
+function mergeHook(parentVal, childVal){
+  return childVal ? (parentVal ? parentVal.concat(childVal) : Array.isArray(childVal) ? 
+    childVal : [childVal]) : parentVal
+}
+```
+
+
+
+### mergeAssets
+
+
+
+```javascript
+// 原型链 res => parentVal(null)
+// 返回 ChildVal 链=> parentVal
+function mergeAssets(parentVal, childVal){
+  var res = Object.create(parentVal || null);
+  return childVal ? extend(res, childVal) : res
+}
+```
+
+
+
+### mergeOptions	
+
+
+
+```javascript
+//合并参数
+function mergeOptions(parent, child, vm){
+  //检查是否规范
+  checkComponents(child);
+  normalizeProps(child);
+  normalizeDirectives(child);
+  //不知道这是个啥
+  var extendsFrom = child.extends;
+  if(extendsFrom){
+    //递归处理什么 暂时不动
+    parent = typeof extendsFrom === 'function' ? 
+    mergeOptions(parent,extendsFrom.options,vm) : 
+    mergeOptions(parent,extendFrom,vm);
+  }
+  //混入
+  if(child.mixins){
+    for(var i = 0, l = child.mixins.length; i < l; i++){
+      var mixin = child.mixins[i];
+      //Vue$3代表vue的构造函数
+      if(mixin.prototype instanceof Vue$3){
+        mixin = mixin.options;
+      }
+      parent = mergeOptions(parent, mixin, vm);
+    }
+  }
+  var option = {};
+  var key;
+  for(key in parent){
+    mergeField(key);
+  }
+  for(key in child){
+    if(!hasOwn(parent, key)){
+      mergeField(key);
+    }
+  }
+  
+  function mergeField(key){
+    var strat = strats[key] || defaultStrat;
+    options[key] = strat(parent[key], child[key], vm, key);
+  }
+  return options
+}
+```
+
+
+
+
+
+## normalize
+
+
+
 ### normalizeProps
 
 
@@ -233,40 +323,29 @@ function normalizeProps(options){
 
 
 
-
-
-### mergeHook
+### normalizeDirectives
 
 
 
 ```javascript
-// 返回数组形式的parentVal+childVal
-function mergeHook(parentVal, childVal){
-  return childVal ? (parentVal ? parentVal.concat(childVal) : Array.isArray(childVal) ? 
-    childVal : [childVal]) : parentVal
+//原生函数转换为对象的值
+function normalizeDirectives(options){
+  var dirs = options.directives;
+  if(dirs){
+    for(var key in dirs){
+      //dirs = {key: fn} => dirs = {key:{bind:fn, update:fn}}
+      var def = dirs[key];
+      if(typeof def === 'function'){
+        dirs[key] = {bind: def, update: def};
+      }
+    }
+  }
 }
 ```
 
 
 
-### mergeAssets
-
-
-
-```javascript
-// 原型链 res => parentVal(null)
-// 返回 ChildVal 链=> parentVal
-function mergeAssets(parentVal, childVal){
-  var res = Object.create(parentVal || null);
-  return childVal ? extend(res, childVal) : res
-}
-```
-
-
-
-
-
-
+## asset
 
 
 
