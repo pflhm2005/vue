@@ -1,4 +1,4 @@
-# ???
+# 不知道定什么标题
 
 
 
@@ -345,7 +345,336 @@ function normalizeDirectives(options){
 
 
 
-## asset
+## prop
+
+
+
+### resolveAsst
+
+
+
+```javascript
+//决议(resolve)一个asset
+//子实例必须在assets的原型链上面
+function resolveAsset(options, type, id, warnMissing){
+  if(typeof id !== 'string'){
+    return
+  }
+  var assets = options[type];
+  //先查询本地属性
+  if(hasOwn(assets, id)){return assets[id]}
+  //驼峰处理
+  var camelizedId = camelize(id);
+  if(hasOwn(assets, camelizedId)){return assets[camelizedId]}
+  //首字符大写处理
+  var PascalCaseId = capitalize(camelizedId);
+  if(hasOwn(assets, PascalCaseId)){return assets[PacalCaseId]}
+  //遍历原型链
+  var res = assets[id] || assets[camelizedId] || assets[PascalCaseId];
+  if('development' !== 'production' && warnMissing && !res){
+    warn('Failed to resolve' + type.slice(0,-1) + ': ' + id, options);
+  }
+  return res;
+}
+```
+
+
+
+### validateProp
+
+
+
+```javascript
+function validateProp(key, propOptions, propsData, vm){
+  var prop = propOptions[key];
+  var absent = !hasOwn(propsData, key);
+  var value = propsData[key];
+  //处理props的布尔值
+  if(isType(Boolean, prop.type)){
+    if(absent && !hasOwn(prop, 'default')){
+      value = false;
+    }
+    else if(!isType(String, prop.type) 
+            && (value === '' || value === hyphenate(key))){
+      value = true;
+    }
+  }
+  if(value === undefined){
+    value = getPropDefaultValue(vm, prop, key);
+    //
+    var prevShouldConvert = observerState.shouldConvert;
+    observerState.shouldConvert = true;
+    observe(value);
+    observerState.shouldConvert = prevShouldConvert;
+  }
+  assertProp(prop, key, value, vm, absent);
+  return value;
+}
+```
+
+
+
+### getPropDefaultValue
+
+
+
+```javascript
+//获取默认的prop值
+function getPropDefaultValue(vm, prop, key){
+  //没有default直接返回undefined
+  if(!hasOwn(prop, 'default')){
+    return undefined;
+  }
+  var def = prop.default;
+  //警告没有默认值提供给对象&数组
+  if('development' !== 'production' && isObject(def)){
+    warn('Invalid default value for prop "' + key + '": ' +
+        'Props with type Object/Array must use a factory function ' + 
+        'to return the default value.'), vm);
+  }
+  //
+  if(vm && vm.$options.propsData && 
+     vm.$options.propsData[key] === undefined && 
+     vm._props[key] !== undefined){
+    return vm._props[key];
+  }
+  //
+  return typeof def === 'function' && 
+    getType(prop.type) !== 'Function' ? def.call(vm) : def;
+}
+```
+
+
+
+## assert
+
+
+
+### assertProp
+
+
+
+```javascript
+//判断prop是否有效
+function assertProp(prop, name, value, vm, absent){
+  if(prop.required && absent){
+    warn('Missing required prop: "' + name + '"', vm);
+    return
+  }
+  if(value == null && !prop.required){
+    return
+  }
+  var type = prop.type;
+  var valid = !type || type === true;
+  var expectedTypes = [];
+  if(type){
+    if(!Array.isArray(type)){
+      type = [type];
+    }
+    for(var i = 0; i < type.length && !valud; i++){
+      var assertedType = assertType(value, type[i]);
+      expectedTypes.push(assertedType.expectedType || '');
+      valid = assertedType.valid;
+    }
+  }
+  if(!valid){
+    warn('Invalid prop: type check failed for prop "' + name '".' + 
+        ' Expected ' + expectedTypes.map(capitalize).join(',') + 
+      ', got ' + Object.prototype.toString.call(value).slice(8,-1) + '.', vm);
+    return ;
+  }
+  var validator = prop.validator;
+  if(validator){
+    if(!validator(value)){
+      warn('Invalid prop: custom validator check failed for prop "' + name '".', vm);
+    }
+  }
+}
+```
+
+
+
+### assertType
+
+
+
+```javascript
+//判断值类型
+function assertType(value, type){
+  var valid;
+  var expectedType = getType(type);
+  if(expectedType === 'String'){
+    valid = typeof value === (expectedType = 'string');
+  } else if(expectedType === 'Number'){
+    valid = typeof value === (expectedType = 'number');
+  } else if(expectedType === 'Boolean'){
+    valid = typeof value === (expectedType = 'boolean');
+  } else if(expectedType === 'Function'){
+    valid = typeof value === (expectedType = 'function');
+  } else if(expectedType === 'Object'){
+    valid = isPlainObject(value);
+  } else if(expectedType === 'Array'){
+    valid = Array.isArray(value);
+  } else{
+    valid = value instanceof type;
+  }
+  return {
+    valid: valid,
+    expectedType: expectedType
+  }
+}
+```
+
+
+
+### getType
+
+
+
+```javascript
+//使用函数的toString方法判断是否是内置类型
+//返回函数名
+function getType(fn){
+  var match = fn && fn.toString().match(/^\s*function (\w+)/);
+  return match && match[1];
+}
+```
+
+
+
+### isType
+
+
+
+```javascript
+function isType(type, fn){
+  if(!Array.isArray(fn)){
+    return getType(fn) === getType(type)
+  }
+  for(var i = 0, len = fn.length; i < len; i++){
+    if(getType(fn[i]) === getType(Type)){
+      return true;
+    }
+  }
+  return false;
+}
+```
+
+
+
+### handleError
+
+
+
+```javascript
+function handleError(err, vm, info){
+  if(config.errorHandler){
+    config.errorHandler.call(null, err, vm, info);
+  } else {
+    warn('Error in ' + info + ':', vm);
+  }
+  if(inBrowser && typeof console !== 'undefined'){
+    console.error(err);
+  } else {
+    throw err;
+  }
+}
+```
+
+
+
+## Proxy
+
+
+
+```javascript
+var init Proxy;
+//所有内置原生对象
+var allowedGlobals = makeMap(
+'Infinity,undefined,NaN,isFinite,isNaN,parseFloat,parseInt,' + 
+  'decodeURI,decodeURIComponent,encodeURI,encodeURIComponent,' + 
+  'Math,Number,Date,Array,Object,Boolean,String,RegExp,Map,Set,JSON,Int1,' + 
+  'require' //兼容webpack/Browserify
+);
+//这地方真奇怪 之前都是用'"' 这里偏偏用"\""转义一下
+var warnNonPresent = function(target, key){
+  warn('Property or method "' + key + '" is not defined on the instance but ' + 
+      'referenced during render. Make sure to declare reactive data ' + 
+      'properties in the data option.', target);
+};
+//是否支持Proxy 这TM是ES6的大家伙啊
+var hasProxy = typeof Proxy !== 'undefined' && Proxy.toString().match(/native code/);
+if(hasProxy){
+  //内置特殊按键属性
+  var isBuiltInModifier = makeMap('stop,prevent,self,ctrl,shift,alt,meta');
+  config.keyCodes = new Proxy(condig.keyCodes, {
+    set: function set(target, key, value){
+      //判断是否内置修饰符
+      if(isBuiltInModifier(key)){
+        //这里加两个括号不知道为啥
+        warn(('Avoid overwriting built-in modifier in config.keyCodes: .' + key));
+        return false
+      } else {
+    	target[key] = value;
+        return true;
+      } 
+    }
+  });
+}
+
+var hasHandler = {
+  has: function has(target, key){
+    var has = key in target;
+    var isAllowed = allowedGlobals(key) || key.charAt(0) === '_';
+    if(!has && !isAllowed){
+      warnNonPresent(target, key);
+    }
+    return has || !isAllowed;
+  }
+};
+
+var getHandler = {
+  get: function get(target, key){
+    if(typeof key === 'string' && !(key in target)){
+      warnNonPresent(target, key);
+    }
+    return target[key];
+  }
+};
+//初始化
+initProxy = function initProxy(vm){
+  if(hasProxy){
+    var options = vm.$options;
+    var handlers = option.render && 
+        options.render._withStripped ? getHandler : hasHandler;
+    vm._renderProxy = new Proxy(vm, handlers);
+  } else {
+    vm._renderProxy = vm;
+  }
+};
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
