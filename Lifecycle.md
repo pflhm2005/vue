@@ -191,7 +191,40 @@ function updateChildComponent(vm, propsData, listeners, parentVnode, renderChild
   renderChildren || 
   vm.$options._renderChildren || 
   parentVnode.data.scopedSlots || 
-  )
+  vm.$scopedSolts !== emptyObject
+  );
+  
+  vm.$options._parentVnodes = parentVnode;
+  vm.$vnode = parentVnode;
+  if(vm._vnode){
+    vm._vnode.parent = parentVnode;
+  }
+  vm.$options._renderChildren = renderChildren;
+  // 更新props
+  if(propsData && vm.$options.props){
+    observerState.shouldConvert = false;
+    observerState.isSettingProps = true;
+    var props = vm._props;
+    var propKeys = vm.$options._propKeys || [];
+    for(var i = 0; i < propKeys.length; i++){
+      var key = propKeys[i];
+      props[key] = validateProp(key, vm.$options.props, propsData, vm);
+    }
+    observerState.shouldConvert = true;
+    observerState.isSettingProps = false;
+    // 保存一份原始副本
+    vm.$options.propsData = propsData;
+  }
+  if(listeners){
+    var oldListeners = vm.$options._parentListeners;
+    vm.$options._parentListeners = listeners;
+    updateComponentListeners(vm, listeners, oldListeners);
+  }
+  //
+  if(hasChildren){
+    vm.$slots = resolveSlots(renderChildren, parentVnode.context);
+    vm.$forceUpdate();
+  }
 }
 ```
 
