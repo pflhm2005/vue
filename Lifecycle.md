@@ -230,6 +230,100 @@ function updateChildComponent(vm, propsData, listeners, parentVnode, renderChild
 
 
 
+### callHook
+
+
+
+```javascript
+function callHook(vm, hook){
+  var handlers = vm.$options[hook];
+  if(handlers){
+    for(var i = 0; j = handlers.length; i < j; i++){
+      try{
+        handlers[i].call(vm);
+      } catch (e){
+        handleError(e, vm, (hook + 'hook'));
+      }
+    }
+  }
+  // 触发钩子事件
+  if(vm._hasHookEvent){
+    vm.$emit('hook' + hook);
+  }
+}
+```
+
+
+
+#### isInInactiveTree
+
+
+
+```javascript
+// 是否存在vm.$parent._inactive
+function isInInactiveTree(vm){
+  while(vm && (vm = vm.$parent)){
+    if(vm._inactive){return true}
+  }
+  return false;
+}
+```
+
+
+
+#### activateChildComponent
+
+
+
+```javascript
+// 触发activated钩子
+function activateChildComponent(vm, direct){
+  if(direct){
+    vm._directInactive = false;
+    if(isInInactiveTree(vm)){
+      return;
+    }
+  }
+  else if(vm._directInactive){
+    return;
+  }
+  if(vm._inactive || vm._inactive == null){
+    vm._inactive = false;
+    for(var i = 0; i < vm.$children.length; i++){
+      activateChildComponent(vm.$children[i]);
+    }
+    callHook(vm, 'activated');
+  }
+}
+```
+
+
+
+#### deactivateChildComponent
+
+
+
+```javascript
+// 触发deactivated钩子
+function deactivateChildComponent(vm, direct){
+  if(direct){
+    vm._directInactive = true;
+    if(isInInactiveTree(vm)){
+      return;
+    }
+  }
+  if(!vm._inactive){
+    vm._inactive = true;
+    for(var i = 0; i < vm.$children.length; i++){
+      deactivateChildComponent(vm.$children[i]);
+    }
+    callHook(vm, 'deactivated');
+  }
+}
+```
+
+
+
 
 
 
