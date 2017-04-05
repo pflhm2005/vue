@@ -588,7 +588,7 @@ function handleError(err, vm, info){
 
 
 ```javascript
-var init Proxy;
+var initProxy;
 //所有内置原生对象
 var allowedGlobals = makeMap(
 'Infinity,undefined,NaN,isFinite,isNaN,parseFloat,parseInt,' + 
