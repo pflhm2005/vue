@@ -1,4 +1,10 @@
-# component
+# component&&props
+
+
+
+
+
+## component
 
 
 
@@ -74,8 +80,6 @@ var componentVNodeHooks = {
 ### createComponent
 
 ```javascript
-var hooksToMerge = Object.keys(componentVNodeHooks);
-
 function createComponent(Ctor, data, context, children, tag){
   if(!Ctor){
     return;
@@ -250,13 +254,104 @@ function resolveAsyncComponent(factory, baseCtor, cb){
 
 
 
+---
 
 
 
+## props
 
 
 
+### extractProps
 
+```javascript
+function extractProps(data, Ctor, tag){
+  // 仅提取原生值
+  var propOptions = Ctor.options.props;
+  if(!propOptions){
+    return;
+  }
+  var res = {};
+  var attrs = data.attrs;
+  var props = data.props;
+  var domProps = data.domProps;
+  if(attrs || props || domProps){
+    for(var key in propOptions){
+      var altKey = hyphenate(key);
+      
+      var keyInLowerCase = key.toLowerCase();
+      if(key !== keyInLowerCase && attrs && attrs.hasOwnProperty(keyInLowerCase)){
+        tip(
+          'Prop "' + keyInLowerCase + '" is passed to component' + 
+          (formatComponentName(tag || Ctor)) + ', but the declared prop name is' + 
+          ' "' + key + '". ' + 
+          'Note that HTML attributes are case-insensitive and camelCased ' + 
+          'props need to use their kebab-case equivalents when using in-DOM ' + 
+          'templates. You should probably use "' + altKey + '" instead of "' + key + '".'
+        );
+      }
+      checkProp(res, props, key, altKey, true) || 
+        checkProp(res, attrs, key, altKey) || 
+        checkProp(res, domProps, key, altKey);
+    }
+  }
+  return res;
+}
+```
+
+
+
+### checkProp
+
+```javascript
+function checkProp(res, hash, key, altKey, preserve){
+  if(hash){
+    if(hasOwn(hash, key)){
+      res[key] = hash[key];
+      if(!preserve){
+        delete hash[key];
+      }
+      return true;
+    }
+  }
+  return false;
+}
+```
+
+
+
+### mergeHooks
+
+```javascript
+var hooksToMerge = Object.keys(componentVNodeHooks);
+
+function mergeHooks(data){
+  // 默认参数
+  if(!data.hook){
+    data.hook = {};
+  }
+  for(var i = 0; i < hooksToMerge.length; i++){
+    var key = hooksToMerge[i];
+    var fromParent = data.hook[key];
+    var ours = componentVNodeHooks[keys];
+    data.hook[key] = fromParent ? mergeHook$1(ours, fromParent) : ours;
+  }
+}
+```
+
+
+
+### mergeHook$1
+
+```javascript
+// 这函数……
+function mergeHook$1(one, two){
+  return function(a, b, c, d){
+    one(a, b, c, d);
+    two(a, b, c, d);
+  }
+}
+```
 
 
 
