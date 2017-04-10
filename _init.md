@@ -324,19 +324,340 @@ function initExtend(Vue){
       extendOptions
     );
     Sub['super'] = Super;
+    
+    // 
+    if(Sub.options.props){
+      initProps$1(Sub);
+    }
+    if(Sub.options.computed){
+      initComputed$1(Sub);
+    }
+    
+    // 扩展
+    Sub.extend = Super.extend;
+    Sub.mixin = Super.mixin;
+    Sub.use = Super.use;
+    
+    // 创建私有值
+    config._assetTypes.forEach(function(type){
+      Sub[type] = Super[type];
+    });
+    
+    // 自检查递归
+    if(name){
+      Sub.options.components[name] = Sub;
+    }
+    
+    // 
+    Sub.superOptions = Super.options;
+    Sub.extendOptions = extendOptions;
+    Sub.sealedOptions = extend({}, Sub.options);
+    
+    // 缓存构造函数
+    cachedCtors[SuperId] = Sub;
+    return Sub;
+  };
+}
+```
+
+
+
+### initProps$1
+
+```javascript
+function initProps$1(Comp){
+  var props = Comp.options.props;
+  for(var key in props){
+    proxy(Comp.prototype, '_props_', key);
   }
 }
 ```
 
 
 
+### initComputed$1
+
+```javascript
+function initComputed$1(Comp){
+  var computed = Comp.options.computed;
+  for(var key in computed){
+    defineComputed(Comp.prototype, key, computed[key]);
+  }
+}
+```
 
 
 
+---
 
 
 
+## initAssetRegisters
 
+```javascript
+function initAssetRegisters(Vue){
+  config._assetTypes.forEach(function(type){
+    Vue[type] = function(id, definition){
+      if(!definition){
+        return this.options[type + 's'][id];
+      } else{
+        // 不要用内置或保留HTML标签做组件ID
+        if(type === 'component' && config.isReservedTag(id)){
+          warn(
+            'Do not use bult-in or reserved HTML elements as component ' + 
+            'id: ' + id
+          );
+        }
+        if(type === 'component' && isPlainObject(definition)){
+          definition.name = definition.name || id;
+          definition = this.options._base.extend(definition);
+        }
+        if(type === 'directive' && typeof definition === 'function'){
+          definition = { bind: definition, update: definition };
+        }
+        this.options[type + 's'][id] = definition;
+        return definition;
+      }
+    };
+  });
+}
+```
+
+
+
+---
+
+
+
+## patternTypes
+
+```javascript
+var patternTypes = [String, RegExp];
+```
+
+
+
+---
+
+
+
+## getComponentName
+
+```javascript
+function getComponentName(opts){
+  return opts && (opts.Ctor.options.name || opts.tag);
+}
+```
+
+
+
+---
+
+
+
+## matches
+
+```javascript
+function matches(pattern, name){
+  // 测试对应pattern是否包含name
+  if(typeof pattern === 'string'){
+    return pattern.split(',').indexOf(name) > -1;
+  } else if(pattern instanceof RegExp){
+    return pattern.test(name);
+  }
+  return false;
+}
+```
+
+
+
+---
+
+
+
+## pruneCache
+
+```javascript
+function pruneCache(cache, filter){
+  for(var key in cache){
+    var cachedNode = cache[key];
+    if(cachedNode){
+      var name = getComponentName(cachedNode.componentOptions);
+      if(name && !filter(name)){
+        pruneCacheEntry(cachedNode);
+        cache[key] = null;
+      }
+    }
+  }
+}
+```
+
+
+
+---
+
+
+
+## pruneCacheEntry
+
+```javascript
+function pruneCacheEntry(vnode){
+  if(vnode){
+    if(!vnode.componentInstance._inactive){
+      callHook(vnode.componentInstance, 'deactivated');
+    }
+    vnode.componentInstance.$destroy();
+  }
+}
+```
+
+
+
+---
+
+
+
+## KeepAlive
+
+```javascript
+var KeepAlive = {
+  name:'keep-alive',
+  abstract:true,
+  
+  props:{
+    include: patternTypes,
+    exclude: patternTypes
+  },
+  
+  created: function created(){
+    this.cache = Object.create(null);
+  },
+  
+  destroyed: function destroyed(){
+    var this$1 = this;
+    for(var key in this$1.cache[key]){
+      pruneCacheEntry(this$1.cache[key]);
+    }
+  },
+  
+  watch: {
+    include: function include(val){
+      pruneCache(this.cache, function(name){ return matches(val, name); });
+    },
+    exclude: function exclude(val){
+      pruneCache(this.cache, function(name){ return !matches(val, name); });
+    }
+  },
+  
+  render: function render(){
+    var vnode = getFirstComponentChild(this.$slot.default);
+    var componentOptions = vnode && vnode.componentOptions;
+    if(componentOptions){
+      // 检查类型
+      var name = getComponentName(componentOptions);
+      if(name && (
+         (this.include && !matches(this.include, name)) || 
+         (this.exclude && matches(this.exclude, name))
+      )){
+        return vnode;
+      }
+      // 3种情况
+      // 1.vnode.key
+      // 2.componentOptions.Ctor.cid::componentOptions.tag
+      // 3.componentOptions.Ctor.cid
+      var key = vnode.key == null ? 
+          componentOptions.Ctor.cid + (componentOptions.tag ? 
+          ('::' + (componentOptions.tag)) : '') : vnode.key;
+      if(this.cache[key]){
+        vnode.componentInstance = this.cache[key].componentInstance;
+      } else{
+        this.cache[key] = vnode;
+      }
+      vnode.data.keepAlive = true;
+    }
+    return vnode;
+  }
+};
+```
+
+
+
+---
+
+
+
+## builtInComponents
+
+```javascript
+var builtInComponents = {
+  KeepAlive: KeepAlive
+};
+```
+
+
+
+---
+
+
+
+## initGlobalAPI
+
+```javascript
+function initGlobalAPI(Vue){
+  var configDef = {};
+  configDef.get = function(){ return config; };
+  // Vue.config对象不可更改
+  configDef.set = function(){
+    warn(
+      'Do not replace the Vue.config object, set individual fields instead.'
+    );
+  };
+  Object.defineProperty(Vue, 'config', configDef);
+  
+  // 暴露通用方法
+  // 非公开API 禁用
+  Vue.util = {
+    warn: warn,
+    extend: extend,
+    mergeOptions: mergeOptions,
+    defineReactive: defineReactive$$1
+  };
+  
+  // 原型方法
+  Vue.set = set;
+  Vue.delete = del;
+  Vue.nextTick = nextTick;
+  
+  Vue.options = Object.create(null);
+  config._assetTypes.forEach(function(type){
+    Vue.options[type + 's'] = Object.create(null);
+  });
+  
+  // Vue.options._base.set = Vue.$set
+  // ...
+  Vue.options._base = Vue;
+  
+  extend(Vue.options.components, buildInComponents);
+  
+  initUse(Vue);
+  initMixin$1(Vue);
+  initExtend(Vue);
+  initAssetRegisters(Vue);
+}
+
+// 初始化全局API
+initGlobalAPI(vue$3);
+
+Object.defineProperty(Vue$3.prototype, 'isServer', {
+  get: isServerRendering
+});
+
+vue$3.version = '2.2.6';
+```
+
+
+
+---
 
 
 
