@@ -379,8 +379,243 @@ function createPatchFunction(backend){
       } else{
         if(isUndef(oldKeyToIdx)){ oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx); }
         idxInOld = isDef(newStartVnode.key) ? oldKeyToIdx[newStartVnode.key] : null;
+        if(isUndef(idxInOld)){
+          createElm(newStartVnode, insertedVnodeQueue, parentElm, oldStartVnode.elm);
+          newStartVnode = newCh[++newStartIdx];
+        } else{
+          elmToMove = oldCh[idxInOld];
+          // dev-mode
+          if('development' !== 'production' && !elmToMove){
+            warn(
+              'It seems there are duplicate keys that is causing an update error. ' + 
+              'Make sure each v-for item has a unique key.'
+            );
+          }
+          if(sameVnode(elmToMove, newStartVnode)){
+            patchVnode(elmToMove, newStartVnode, insertedVnodeQueue);
+            oldCh[idxInOld] = undefined;
+            canMove && nodeOps.insertBefore(parentElm, newStartVnode.elm, oldStartVnode.elm);
+            newStartVnode = newCh[++newStartIdx];
+          } else{
+            createElm(newStartVnode, insertedVnodeQueue, parentElm, oldStartVnode.elm);
+            newStartVnode = newCh[++newStartIdx];
+          }
+        }
       }
     }
+    if(oldStartIdx > oldEndIdx){
+      refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm;
+      addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
+    } else if(newStartIdx > newEndIdx){
+      removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
+    }
+  }
+  
+  // patchVnode
+  function patchVnode(oldVnode, vnode, insertedVnodeQueue, removeOnly){
+    if(oldVnode === vnode){
+      return ;
+    }
+    // 
+    if(isTrue(vnode.isStatic) && 
+       isTrue(oldVnode.isStatic) && 
+       vnode.key === oldVnode.key && 
+       (isTrue(vnode.isCloned) || isTrue(vnode.isOnce))
+      ){
+      vnode.elm = oldVnode.elm;
+      vnode.componentInstance = oldVnode.componentInstance;
+      return ;
+    }
+    var i;
+    var data = vnode.data;
+    if(isDef(data) && isDef(i = data.hook) && isDef(i = i.prepatch)){
+      i(oldVnode, vnode);
+    }
+    var elm = vnode.elm = oldVnode.elm;
+    var oldCh = oldVnode.children;
+    var ch = vnode.children;
+    if(isDef(data) && isPatchable(vnode)){
+      for(i = 0; i < cbs.update.length; ++i) { cbs.update[i](oldVnode, vnode); }
+      if(isDef(i = data.hook) && isDef(i = i.update)){ i(oldVnode, vnode); }
+    }
+    if(isUndef(vnode.text)){
+      if(isDef(oldCh) && isDef(ch)){
+        if(oldCh !== ch) { updateChildren(elm, oldCh, ch, insertedVnodeQueue, removeOnly); }
+      } else if(isDef(ch)){
+        if(isDef(oldVnode.text)) { nodeOps.setTextContent(elm, ''); }
+        addVnodes(elm, null, ch, 0, ch.length - 1, insertedVnodeQueue);
+      } else if(isDef(oldCh)){
+        removeVnodes(elm, oldCh, 0, oldCh.length - 1);
+      } else if(isDef(oldVnode.text)){
+        nodeOps.setTextContent(elm, '');
+      }
+    } else if(oldVnode.text !== vnode.text){
+      nodeOps.setTextContent(elm, vnode.text);
+    }
+    if(isDef(data)){
+      if(isDef(i = data.hook) && isDef(i = i.postpatch)) { i(oldValue, vnode); }
+    }
+  }
+  
+  // 
+  function invokeInsertHook(vnode, queue, initial){
+    if(isTrue(initial) && isDef(vnode.parent)){
+      vnode.parent.data.pendingInsert = queue;
+    } else{
+      for(var i = 0; i < queue.length; ++i){
+        queue[i].data.hook.insert(queue[i]);
+      }
+    }
+  }
+  
+  // 
+  var bailed = false;
+  // 已渲染模块
+  var isRenderedModule = makeMap('attrs,style,class,staticClass,staticStyle,key');
+  
+  // 仅在浏览器执行的函数 
+  function hydrate(elm, vnode, insertedVnodeQueue){
+    if(!assertNodeMatch(elm, vnode)){
+      return false;
+    }
+    vnode.elm = elm;
+    var tag = vnode.tag;
+    var data = vnode.data;
+    var children = vnode.children;
+    if(isDef(data)){
+      if(isDef(i = data.hook) && isDef(i = i.init)) { i(vnode, true); }
+      if(isDef(i = vnode.componentInstance)){
+        initComponent(vnode, insertedVnodeQueue);
+        return true;
+      }
+    }
+    if(isDef(tag)){
+      if(isDef(children)){
+        if(!elm.hasChildNodes()){
+          createChildren(vnode, children, insertedVnodeQueue);
+        } else{
+          var childrenMatch = true;
+          var childNode = elm.firstChild;
+          for(var i$1 = 0; i$1 < children.length; i$1++){
+            if(!childNode || !hydrate(childNode, children[i$1], insertedVnodeQueue)){
+              childrenMatch = false;
+              break;
+            }
+            childNode = childNode.nextSibling;
+          }
+          // warning
+          if(!childrenMatch || childNode){
+            if('development' !== 'production' && 
+               typeof console !== 'undefined' && 
+               !bailed
+              ){
+              bailed = true;
+              console.warn('Parent: ', elm);
+              console.warn('Mismatching childNodes vs. VNodes: ', elm.childNodes, children);
+            }
+            return false;
+          }
+        }
+      }
+      if(isDef(data)){
+        for(var key in data){
+          if(!isRenderedModule(key)){
+            invokeCreateHooks(vnode, insertedVnodeQueue);
+            break;
+          }
+        }
+      }
+    } else if(elm.data !== vnode.text){
+      elm.data = vnode.text;
+    }
+    return true;
+  }
+  
+  // assertNodeMatch
+  function assertNodeMatch(node, vnode){
+    if(isDef(vnode.tag)){
+      return (
+        vnode.tag.indexOf('vue-component') === 0 || 
+        vnode.tag.toLowerCase() === (node.tagName && node.tagName.toLowerCase())
+      );
+    } else{
+      // 8 => comment
+      // 3 => text
+      return node.nodeType === (vnode.isComment ? 8 : 3);
+    }
+  }
+  
+  // 
+  return function patch(oldVnode, vnode, hydrating, removeOnly, parentElm, refElm){
+    if(isUndef(vnode)){
+      if(isDef(oldVnode)){ invokeDestroyHook(oldVnode); }
+      return ;
+    }
+    var isInitialPatch = false;
+    var insertedVnodeQueue = [];
+    
+    if(isUndef(oldVnode)){
+      isInitialPatch = true;
+      createElm(vnode, insertedVnodeQueue, parentElm, refElm);
+    } else{
+      var isRealElement = isDef(oldVnode.nodeType);
+      if(!isRealElement && sameVnode(oldVnode, vnode)){
+        patchVnode(oldVnode, vnode, insertedVnodeQueue, removeOnly);
+      } else{
+        if(isRealElement){
+          if(oldVnode.nodeType === 1 && oldVnode.hasAttribute('server-rendered')){
+            oldVnode.removeAttribute('server-rendered');
+            hydrating = true;
+          }
+          if(isTrue(hydrating)){
+            if(hydrate(oldVnode, vnode, insertedVnodeQueue)){
+              invokeInsertHook(vnode, insertedVnodeQueue, true);
+              return oldVnode;
+            } else{
+              warn(
+                'The client-side rendered virtual DOM tree is not matching ' + 
+                'server-rendered content. This is likely caused by incorrect ' + 
+                'HTML markup, for example nesting block-level elements inside ' + 
+                '<p>, or missing <tbody>. Bailing hydration and performing ' + 
+                'full client-side render.'
+              );
+            }
+          }
+          // 
+          oldVnode = emptyNodeAt(oldVnode);
+        }
+        // 
+        var oldElm = oldVnode.elm;
+        var parentElm$1 = nodeOps.parentNode(oldElm);
+        createElm(
+          vnode,
+          insertedVnodeQueue,
+          //
+          oldElm._leaveCb ? null : parentElm$1,
+          nodeOps.nextSibling(oldElm)
+        );
+        
+        if(isDef(vnode.parent)){
+          var ancestor = vnode.parent;
+          while(ancestor){
+            ancestor.elm = vnode.elm;
+            ancestor = ancestor.parent;
+          }
+          if(isPatchable(vnode)){
+            for(var i = 0; i < cbs.create.length; ++i){
+              cbs.create[i](emptyNode, vnode.parent);
+            }
+          }
+        }
+        if(isDef(parentElm$1)){
+          removeVnodes(parentElm$1, [oldVnode], 0, 0);
+        } else if(isDef(oldVnode.tag)){
+          invokeDestroyHook(oldVnode);
+        }
+      }
+    }
+    invokeInsertHook(vnode, insertedVnodeQueue, isInitialPatch);
+    return vnode.elm;
   }
 }
 ```
