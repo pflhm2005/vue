@@ -436,39 +436,116 @@ function baseWarn(msg){
 
 ```javascript{
 function pluckModuleFunction(modules, key){
-  
+  // 返回[modules[0][key],modules[1][key],...] 
+  // 后面过滤null,undefined等假值
+  return modules ? modules.map(function(m){ return m[key]; }).filter(function(_){ return _; }) : [];
 }
 ```
 
 
 
+### addProp
+
+```javascript
+function addProp(el, name, value){
+  (el.props || (el.props = [])).push({ name: name, value: value });
+}
+```
 
 
 
+### addAttr
+
+```javascript
+function addAttr(el, name, value){
+  (el.attrs || (el.attrs = [])).push({ name: name, value: value });
+}
+```
 
 
 
+### addDirective
+
+```javascript
+function addDirective(el, name, rawName, value, arg, modifiers){
+  (el.directives || (el.directives = [])).push({ name: name, rawName: rawName, value: value, arg: arg, modifiers: modifiers});
+}
+```
 
 
 
+### addHandler
+
+```javascript
+function addHandler(el, name, value, modifiers, important){
+  if(modifiers && modifiers.capture){
+    delete modifiers.capture;
+    // 标记captured事件
+    name = '!' + name;
+  }
+  if(modifiers && modifiers.once){
+    delete modifiers.once;
+    // 标记once事件
+    name = '~' + name;
+  }
+  var events;
+  if(modifiers && modifiers.native){
+    delete modifiers.native;
+    events = el.nativeEvents || (el.nativeEvents = {});
+  } else{
+    events = el.events || (el.events = {});
+  }
+  var newHandler = { value: value, modifiers: modifiers};
+  var handlers = events[name];
+  
+  if(Array.isArray(handlers)){
+    important ? handlers.unshift(newHandler) : handlers.push(newHandler);
+  } else if(handlers){
+    events[name] = important ? [newHandler, handlers] : [handlers, newHandler];
+  } else{
+    events[name] = newHandler;
+  }
+}
+```
 
 
 
+### getBindingAttr
+
+```javascript
+function getBindingAttr(el, name, getStatic){
+  // 简写
+  var dynamicValue = getAndRemoveAttr(el, ':' + name) || getAndRemoveAttr(el, 'v-bind' + name);
+  if(dynamicValue != null){
+    return parseFilters(dynamicValue);
+  } else if(getStatic !== false){
+    var staticValue = getAndRemoveAttr(el ,name);
+    if(staticValue != null){
+      return JSON.stringify(staticValue);
+    }
+  }
+}
+```
 
 
 
+### getAndRemoveAttr
 
-
-
-
-
-
-
-
-
-
-
-
+```javascript
+function getAndRemoveAttr(el, name){
+  var val;
+  if((val = el.attrsMap[name]) != null){
+    var list = el.attrsList;
+    for(var i = 0; l = list.length; i < l; i++){
+      if(list[i].name === name){
+        list.splice(i, 1);
+        break;
+      }
+    }
+  }
+  return val;
+}
+```
 
 
 
