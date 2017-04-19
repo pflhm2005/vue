@@ -290,6 +290,195 @@ function genCheckboxModel(el, value, modifiers){
 
 
 
+#### genRadioModel
+
+```javascript
+function genRadioModel(el, value, modifiers){
+  var number = modifiers && modifiers.number;
+  var valueBinding = getBindingAttr(el, 'value') || 'null';
+  // _n(valueBinding)
+  valueBinding = number ? ('_n(' + valueBinding + ')') : valueBinding;
+  // _q(value, valueBinding)
+  addProp(el, 'checked', ('_q(' + value + ',' + valueBinding + ')'));
+  addHandler(el, CHECKBOX_RADIO_TOKEN, genAssignmentCode(value, valueBinding), null, true);
+}
+```
+
+
+
+#### genSelect
+
+```javascript
+function genSelect(el, value, modifiers){
+  var number = modifiers && modifiers.number;
+  // Array.prototype.filter.call($event.target.options,function(o){return o.selected};)
+  // .map(function(o){var val = '_value' in o ? o._value : o.value; return number ? _n(val) : val})
+  var selectedVal = 'Array.prototype.filter' + 
+      '.call($event.target.options,function(o){return o.selected})' + 
+      '.map(function(o){var val = "_value" in o ? o._value : o.value;' + 
+      'return ' + (number ? '_n(val)' : 'val') + '})';
+  var assignment = '$event.target.multiple ? $$selectedVal : $$selectedVal[0]';
+  var code = 'var $$selectedVal = ' + selectedVal + ';';
+  code = code + ' ' + (genAssignmentCode(value, assignment));
+  addHandler(el, 'change', code, null, true);
+}
+```
+
+
+
+#### genDefaultModel
+
+```javascript
+function genDefaultModel(el, value, modifiers){
+  var type = el.attrsMap.type;
+  var ref = modifiers || {};
+  var lazy = ref.lazy;
+  var number = ref.number;
+  var trim = ref.trim;
+  var needCompositionGuard = !lazy && type !== 'range';
+  //
+  var event = lazy ? 'change' : type === 'range' ? RANGE_TOKEN : 'input';
+  var valueExpression = '$event.target.value';
+  if(trim){
+    valueExpression = '$event.target.value.trim()';
+  }
+  if(number){
+    valueExpression = '_n(' + valueExpression + ')';
+  }
+  var code = genAssignmentCode(value, valueExpression);
+  if(needCompositionGuard){
+    code = 'if($event.target.composition)return;' + code;
+  }
+  addProp(el, 'value', ('(' + value + ')'));
+  addHandler(el, event, code, null, true);
+  if(trim || number || type === 'number'){
+    addHandler(el, 'blur', '$forceUpdate()');
+  }
+}
+```
+
+
+
+---
+
+
+
+### event
+
+
+
+#### normalizeEvents
+
+```javascript
+function normalizeEvents(on){
+  var event;
+  if(on[RANGE_TOKEN]){
+    // IE的input[type=range]仅支持change事件
+    event = isIE ? 'change' : 'input';
+    on[event] = [].concat(on[RANGE_TOKEN], on[event] || []);
+    delete on[RANGE_TOKEN];
+  }
+  if(on[CHECKBOX_RADIO_TOKEN]){
+    event = isChrome ? 'click' : 'change';
+    on[event] = [].concat(on[CHECKBOX_RADIO_TOKEN], on[event] || []);
+    delete on[CHECKBOX_RADIO_TOKEN];
+  }
+}
+```
+
+
+
+```javascript
+var target$1;
+```
+
+
+
+#### add$1
+
+```javascript
+function add$1(event, handler, once, capture){
+  if(once){
+    var oldHandler = handler;
+    var _target = target$1;
+    handler = function(ev){
+      var res = arguments.length === 1 ? oldHandler(ev) : oldHandler.apply(null, arguments);
+      if(res !== null){
+        remove$2(event, handler, capture, _target);
+      }
+    };
+  }
+  target$1.addEventListener(event, handler, capture);
+}
+```
+
+
+
+
+
+#### remove$2
+
+```javascript
+function remove$2(event, handler, capture, _target){
+  (_target || target$1).removeEventListener(event, handler, capture);
+}
+```
+
+
+
+#### updateDOMlisteners
+
+```javascript
+function updateDOMlisteners(oldVnode, vnode){
+  if(!oldVnode.data.on && !vnode.data.on){
+    return ;
+  }
+  var on = vnode.data.on || {};
+  var oldOn = oldVnode.data.on || {};
+  target$1 = vnode.elm;
+  normalizeEvents(on);
+  updatelisteners(on, oldOn, add$1, remove$2, vnode, context);
+}
+```
+
+
+
+#### events
+
+```javascript
+// 两个一样的搞毛
+var events = {
+  create: updateDOMlisteners,
+  update: updateDOMlisteners
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
