@@ -363,7 +363,7 @@ function genDefaultModel(el, value, modifiers){
 
 
 
-### event
+### Event
 
 
 
@@ -455,11 +455,141 @@ var events = {
 
 
 
+---
 
 
 
+### Props
 
 
+
+#### updateDOMProps
+
+```javascript
+function updateDOMProps(oldVnode, vnode){
+  if(!oldVnode.data.domProps && !vnode.data.domProps){
+    return ;
+  }
+  var key, cur;
+  var elm = vnode.elm;
+  var oldProps = oldVnode.data.domProps || {};
+  var props = vnode.data.domProps || {};
+  // 复制观测对象
+  if(props.__ob__){
+    props = vnode.data.domProps = extend({}, props);
+  }
+  
+  for(key in oldProps){
+    if(props[key] == null){
+      elm[key] = '';
+    }
+  }
+  for(key in props){
+    cur = props[key];
+    // 判断子元素是否有内容
+    if(key === 'textContent' || key === 'innerHTML'){
+      if(vnode.children) { vnode.children.length = 0; }
+      if(cur === oldProps[key]) { continue; }
+    }
+    if(key === 'value'){
+      // 将value保存为_value属性
+      elm._value = cur;
+      // 避免当值一样时重置鼠标位置
+      var strCur = cur = null ? '' : String(cur);
+      if(shouldUpdateValue(elm, vnode, strCur)){
+        elm.value = strCur;
+      }
+    } else{
+      elm[key] = cur;
+    }
+  }
+}
+```
+
+
+
+#### shouldUpdateValue
+
+```javascript
+function shouldUpdateValue(elm, vnode, checkVal){
+  return (!elm.composing && (
+    vnode.tag === 'option' || 
+    isDirty(elm, checkVal) || 
+    isInputChanged(elm, checkVal)
+  ));
+}
+```
+
+
+
+#### isDirty
+
+```javascript
+function isDirty(elm, checkVal){
+  // 当输入框失去焦点且值不一致时返回true
+  return document.activeElement !== elm && elm.value !== checkVal;
+}
+```
+
+
+
+#### isInputChanged
+
+```javascript
+function isInputChanged(elm, newVal){
+  var value = elm.value;
+  var modifiers = elm._vModifiers;
+  // 比较数字s
+  if((modifiers && modifiers.number) || elm.type === 'number'){
+    return toNumber(value) !== toNumber(newVal);
+  }
+  // trim()
+  if(modifiers && modifiers.trim){
+    return value.trim() !== newVal.trim();
+  }
+  return value !== newVal;
+}
+```
+
+
+
+#### domProps
+
+```javascript
+var domProps = {
+  create: updateDOMProps,
+  update: updateDOMProps
+}
+```
+
+
+
+---
+
+
+
+### Style
+
+
+
+#### parseStyleText
+
+```javascript
+var parseStyleText = cached(function(cssText){
+  var res = {};
+  // 
+  var listDelimiter = /;(?![^(]*\))/g;
+  // 匹配':'后面1个或多个元素
+  var propertyDelimiter = /:(.+)/;
+  cssText.split(listDelimiter).forEach(function(item){
+    if(item){
+      var tmp = item.split(propertyDelimiter);
+      tmp.length > 1 && (res[tmp[0].trim()] = tmp[1].trim());
+    }
+  });
+  return res;
+})
+```
 
 
 
