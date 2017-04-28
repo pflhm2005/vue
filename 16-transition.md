@@ -393,6 +393,34 @@ function updateStyle(oldVnode, vnode){
 
 
 
+#### addClass
+
+```javascript
+function addClass(el, cls){
+  if(!cls || !(cls = cls.trim())){
+    return;
+  }
+  // classList兼容IE10+ 还是部分兼容
+  if(el.classList){
+    if(cls.indexOf(' ') > -1){
+      // 空白分割添加到类中
+      cls.split(/\s+/).forEach(function(c){ return el.classList.add(c); });
+    } else{
+      el.classList.add(cls);
+    }
+  } else{
+    var cur = ' ' + (el.getAttribute('class') || '') + ' ';
+    if(cur.indexOf(' ' + cls + ' ') < 0){
+      el.setAttribute('class', (cur + cls).trim());
+    }
+  }
+}
+```
+
+
+
+
+
 #### removeClass
 
 ```javascript
@@ -435,6 +463,24 @@ function removeClass(el, cls){
 
 
 ### Transition
+
+
+
+```javascript
+var transition = inBrowser ? {
+  create: _enter,
+  activate: _enter,
+  remove: function remove$$1(vnode, rm){
+    if(!vnode.data.show){
+      leave(vnode, rm);
+    } else{
+      rm();
+    }
+  }
+} : {};
+```
+
+
 
 
 
@@ -662,15 +708,296 @@ function toMs(s){
 
 
 
+---
 
 
 
+### enter
+
+```javascript
+function enter(vnode, toggleDisplay){
+  var el = vnode.elm;
+  
+  if(el._leaveCb){
+    el._leaveCb.cancelled = true;
+    el._leaveCb();
+  }
+  
+  var data = resolveTransition(vnode.data.transition);
+  if(!data){
+    return;
+  }
+  
+  if(el._enterCb || el.nodeType !== 1){
+    return;
+  }
+  
+  var css = data.css;
+  var type = data.type;
+  var enterClass = data.enterClass;
+  var enterToClass = data.enterToClass;
+  var enterActiveClass = data.enterActiveClass;
+  var appearClass = data.appearClass;
+  var appearToClass = data.appearToClass;
+  var appearActiveClass = data.appearActiveClass;
+  var beforeEnter = data.beforeEnter;
+  var enter = data.enter;
+  var afterEnter = data.afterEnter;
+  var enterCancelled = data.enterCancelled;
+  var beforeAppear = data.beforeAppear;
+  var appear = data.appear;
+  var afterAppear = data.afterAppear;
+  var appearCancelled = data.appearCancelled;
+  var duration = data.duration;
+  
+  
+  var context = activeInstance;
+  var transitionNode = activeInstance.$vnode;
+  while(transitionNode && transitionNode.parent){
+    transitionNode = transitionNode.parent;
+    context = transitionNode.context;
+  }
+  
+  var isAppear = !context._isMounted || !vnode.isRootInsert;
+  
+  if(isAppear && !appear && appear !== ''){
+    return;
+  }
+  
+  var startClass = isAppear && appearClass ? appearClass : enterClass;
+  var activeClass = isAppear && appearActiveClass ? appearActiveClass : enterActiveClass;
+  var toClass = isAppear && appearToClass ? appearToClass : enterToClass;
+  
+  var beforeEnterHook = isAppear ? (beforeAppear || beforeEnter) : beforeEnter;
+  var enterHook = isAppear ? (typeof appear === 'function' ? appear : enter) : enter;
+  var afterEnterHook = isAppear ? (afterAppear || afterEnter) : afterEnter;
+  var enterCancelledHook = isAppear ? (appearCancelled || enterCancelled) : enterCancelled;
+  
+  var explicitEnterDuration = toNumber(isObject(duration) ? duration.enter : duration);
+  
+  if('development' !== 'production' && explicitEnterDuration != null){
+    checkDuration(explicitEnterDuration, 'enter', vnode);
+  }
+  
+  var expectsCSS = css !== false && isIE9;
+  var userWantsControl = getHookArgumentsLength(enterHook);
+  
+  var cb = el._enterCb = once(function(){
+    if(expectsCSS){
+      removeTransitionClass(el, toClass);
+      removeTransitionClass(el, activeClass);
+    }
+    if(cb.cancelled){
+      if(expectsCSS){
+        removeTranstionClass(el, startClass);
+      }
+      enterCancelledHook && enterCancelledHook(el);
+    } else{
+      afterEnterHook && afterEnterHook(el);
+    }
+    el._enterCb = null;
+  });
+  
+  if(!vnode.data.show){
+    mergeVNodeHook(vnode.data.hook || (vnode.data.hook = {}), 'insert', function(){
+      var parent = el.parentNode;
+      var pendingNode = parent && parent._pending && parent._pending[vnode.key];
+      if(pendingNode && 
+         pendingNode.tag === vnode.tag && 
+         pendingNode.elm._leaveCb){
+        pendingNode.elm._leaveCb();
+      }
+      enterHook && enterHook(el, cb);
+    });
+  }
+  
+  beforeEnterHook && beforeEnterHook(el);
+  if(expectsCSS){
+    addTransitionClass(el, startClass);
+    addTransitionClass(el, activeClass);
+    nextFrame(function(){
+      addTransitionClass(el, toClass);
+      removeTransitionClass(el, startClass);
+      if(!cb.cancelled && !userWantsControl){
+        if(isValidDuration(explicitEnterDuration)){
+          setTimeout(cb, explicitEnterDuration);
+        } else{
+          whenTransitionEnds(el, type, cb);
+        }
+      }
+    });
+  }
+  
+  if(vnode.data.show){
+    toggleDisplay && toggleDisplay();
+    enterHook && enterHook(el, cb);
+  }
+  
+  if(!expectsCSS && !userWantsControl){
+    cb();
+  }
+}
+```
 
 
 
+### leave
+
+```javascript
+function leave(vnode, rm){
+  var el = vnode.elm;
+  
+  if(el._enterCb){
+    el._enterCb.cancelled = true;
+    el._enterCb();
+  }
+  
+  var data = resolveTransition(vnode.data.transition);
+  if(!data){
+    return rm();
+  }
+  
+  if(el._leaveCb || el.nodeType !== 1){
+    return;
+  }
+  
+  var css = data.css;
+  var type = data.type;
+  var leaveClass = data.leaveClass;
+  var leaveToClass = data.leaveToClass;
+  var leaveActiveClass = data.leaveActiveClass;
+  var beforeLeave = data.beforeLeave;
+  var leave = data.leave;
+  var afterLeave = data.afterLeave;
+  var leaveCancelled = data.leaveCancelled;
+  var delayLeave = data.delayLeave;
+  var duration = data.duration;
+  
+  var expectsCSS = css !== false && !isIE9;
+  var userWantsControl = getHookArgumentsLength(leave);
+  
+  var explicitLeaveDuration = toNumber(
+    isObject(duration) ? duration.leave : durantion
+  );
+  
+  if('development' !== 'production' && explicitLeaveDuration != null){
+    checkDuration(explicitLeaveDuration, 'leave', vnode);
+  }
+  
+  var cb = el._leaveCb = once(function(){
+    if(el.parentNode && el.parentNode._pending){
+      el.parentNode._pending[vnode.key] = null;
+    }
+    if(expectsCSS){
+      removeTransitionClass(el, leaveToClass);
+      removeTransitionClass(el, leaveActiveClass);
+    }
+    if(cb.cancelled){
+      if(expectsCSS){
+        removeTransitionClass(el, leaveClass);
+      }
+      leaveCancelled && leaveCancelled(el);
+    } else{
+      rm();
+      afterLeave && afterLeave(el);
+    }
+    el._leaveCb = null;
+  });
+  
+  if(delayLeave){
+    delayLeave(performLeave);
+  } else{
+    performLeave();
+  }
+  
+  function performLeave(){
+    if(cb.cancelled){
+      return;
+    }
+    
+    if(!vnode.data.show){
+      (el.parentNode._pending || (el.parentNode._pending = {}))[vnode.key] = vnode;
+    }
+    beforeLeave && beforeLeave(el);
+    if(expectsCSS){
+      addTransitionClass(el, leaveClass);
+      addTransitionClass(el, leaveActiveClass);
+      nextFrame(function(){
+        addTransitionClass(el, leaveToClass);
+        removeTransitionClass(el, leaveClass);
+        if(!cb.cancelled && !userWantsControl){
+          if(isValidDuration(explicitLeaveDuration)){
+            setTimeout(cb, explicitLeaveDuration);
+          } else{
+            whenTransitionEnds(el, type, cb);
+          }
+        }
+      });
+    }
+    leave && leave(el, cb);
+    if(!expectsCSS && !userWantsControl){
+      cb();
+    }
+  }
+}
+```
 
 
 
+#### checkDuration
+
+```javascript
+// 检测duration值 仅用于dev模式
+function checkDuration(val, name, vnode){
+  if(typeof val !== 'number'){
+    warn(
+      '<transition> explicit ' + name + ' duration is not a valid number - ' + 
+      'got ' + (JSON.stringify(val)) + '.',
+      vnode.context
+    );
+  }
+}
+```
+
+
+
+#### isValidDuration
+
+```javascript
+function isValidDuration(val){
+  return typeof val === 'number' && !isNaN(val);
+}
+```
+
+
+
+#### getHookArgumentsLength
+
+```javascript
+function getHookArgumentsLength(fn){
+  if(!fn){ return this; }
+  var invokerFns = fn.fns;
+  if(invokerFns){
+    return getHookArgumentLength(
+      Array.isArray(invokerFns) ? invokerFns[0] : invokerFns
+    )
+  } else{
+    return (fn._length || fn.length) > 1
+  }
+}
+```
+
+
+
+### _enter
+
+```javascript
+function _enter(_, vnode){
+  if(!vnode.data.show){
+    enter(vnode);
+  }
+}
+```
 
 
 
