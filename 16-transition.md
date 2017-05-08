@@ -551,7 +551,11 @@ function _enter(_, vnode){
 
 
 
-### platformModules
+
+
+## platformModules
+
+
 
 
 
@@ -578,6 +582,25 @@ if(isIE9){
   });
 }
 ```
+
+
+
+
+
+## platformDirectives
+
+
+
+
+
+```javascript
+var platformDirectives=  {
+  model: model$1,
+  show: show
+}
+```
+
+
 
 
 
@@ -727,7 +750,7 @@ function trigger(el, type){
 
 
 
-### locateNode
+#### locateNode
 
 ```javascript
 function locateNode(vnode){
@@ -740,7 +763,7 @@ function locateNode(vnode){
 
 
 
-### show
+#### show
 
 ```javascript
 var show = {
@@ -759,8 +782,160 @@ var show = {
     }
   },
   update: function update(el, ref, vnode){
+    var value = ref.value;
+    var oldValue = ref.oldValue;
     
+    if(value === oldValue){ return }
+    vnode = locateNode(vnode);
+    var transition = vnode.data && vnode.data.transition;
+    if(transition && !isIE9){
+      vnode.data.show = true;
+      if(value){
+        enter(vnode, function(){
+          el.style.display = el._vOriginalDisplay;
+        });
+      } else{
+        leave(vnode, function(){
+          el.style.display = 'none';
+        });
+      }
+    } else{
+      el.style.display = value ? el._vOriginalDisplay : 'none';
+    }
+  },
+  unbind: function unbind(el, binding, vnode, oldVnode, isDestroy){
+    if(!isDestroy){
+      el.style.display = el._vOriginalDisplay;
+    }
   }
+};
+```
+
+
+
+---
+
+
+
+### transitionProps
+
+
+
+```javascript
+var transitionProps = {
+  name: String,
+  appear: Boolean,
+  css: Boolean,
+  mode: String,
+  type: String,
+  enterClass: String,
+  leaveClass: String,
+  enterToClass: String,
+  leaveToClass: String,
+  enterActiveClass: String,
+  leaveActiveClass: String,
+  appearClass: String,
+  appearActiveClass: String,
+  appearToClass: String,
+  duration: [Number, String, Object]
+};
+```
+
+
+
+#### getRealChild
+
+```javascript
+function getRealChild(vnode){
+  var compOptions = vnode && vnode.componentOptions;
+  if(compOptions && compOptions.Ctor.options.abstract){
+    return getRealChild(getFirstComponentChild(compOptions.children));
+  } else{
+    return vnode;
+  }
+}
+```
+
+
+
+#### extractTransition
+
+```javascript
+function extractTransitionData(comp){
+  var data = {};
+  var options = comp.$options;
+  
+  // props
+  for(var key in options.propsData){
+    data[key] = comp[key];
+  }
+  
+  var listeners = options._parentListeners;
+  for(var key$1 in listeners){
+    data[camelize(key$1)] = listeners[key$1];
+  }
+  return data;
+}
+```
+
+
+
+#### placeholder
+
+```javascript
+function placeholder(h, rawChild){
+  if(/\d-keep-alive$/.test(rawChild.tag)){
+    return h('keep-alive', {
+      props: rawChild.componentOptions.propsData
+    });
+  }
+}
+```
+
+
+
+#### hasParentTransition
+
+```javascript
+function hasParentTransition(vnode){
+  // 向上遍历 直到父元素有vnode.data.transition属性
+  while((vnode = vnode.parent)){
+    if(vnode.data.transition){
+      return true;
+    }
+  }
+}
+```
+
+
+
+#### isSameChild
+
+```javascript
+function isSameChild(child, oldChild){
+  // key,tag相等
+  return oldChild.key === child.key && oldChild.tag === child.tag;
+}
+```
+
+
+
+---
+
+
+
+
+
+## platformComponent
+
+
+
+
+
+```javascript
+var platformComponent = {
+  Transition: Transition,
+  TransitionGroup: TransitionGroup
 }
 ```
 
@@ -768,23 +943,276 @@ var show = {
 
 
 
+### Transition
+
+```javascript
+var Transition = {
+  name: 'transiiton',
+  props: transitionProps,
+  abstract: true,
+  
+  render: function render(h){
+    var this$1 = this;
+    
+    var children = this.$slots.default;
+    if(!children){
+      return ;
+    }
+    
+    // 过滤文本节点(空格)
+    children = children.filter(function(c){ return c.tag; });
+    if(!children.length){
+      return ;
+    }
+    
+    if('development' !== 'production' && children.length > 1){
+      warn(
+        '<transition> can only be used on a single element. Use' + 
+        '<transition-group> for lists.',
+        this.$parent
+      );
+    }
+    var mode = this.mode;
+    
+    if('development' !== 'production' && mode && mode !== 'in-out' && mode !== 'out-in'){
+      warn(
+        'invalid <transition> mode: ' + mode,
+        this.$parent
+      );
+    }
+    var rawChild = children[0];
+    
+    // 如果这是组价根节点 且父节点也有transition 跳过
+    if(hasParentTransition(this.vnode)){
+      return rawChild;
+    }
+    
+    // 
+    var child = getRealChild(rawChild);
+    if(!child){
+      return rawChild;
+    }
+    
+    
+    if(this._leaving){
+      return placeholder(h, rawChild);
+    }
+    
+    var id = '_transition-' + (this.id) + '-';
+    child.key = child.key == null ? 
+      id + child.tag : 
+      isPrimitive(child.key) ? 
+      (String(child.key).indexOf(id) === 0 ? child.key : id + child.key) : 
+      child.key;
+    
+    var data = (child.data || (child.data = {})).transition = extractTransitionData(this);
+    var oldRawChild = this._vnode;
+    var oldChild = getRealChild(oldRawChild);
+    
+    // 标记v-show
+    if(child.data.directives && child.data.directives.somw(function(d){ return d.name === 'show'; })){
+      child.data.show = true;
+    }
+    
+    if(oldChild && oldChild.data && !isSameChild(child, oldChild)){
+      var oldData = oldChild && (oldChild.data.transition = extend({}, data));
+      if(mode === 'out-in'){
+        this._leaving = true;
+        mergeVNodeHook(oldData, 'afterLeave', function(){
+          this$1._leaving = false;
+          this$1.$forceUpdate();
+        });
+        return placeholder(h, rawChild);
+      } else if(mode == 'in-out'){
+        var delayedLeave;
+        var performLeave = function(){ delayedLeave(); };
+        mergeVNodeHook(data, 'afterEnter', performLeave);
+        mergeVNodeHook(data, 'enterCancelled', performLeave);
+        mergeVNodeHook(oldData, 'delayLeave', function(leave){ delayedLeave = leave; });
+      }
+    }
+    return rawChild;
+  }
+};
+```
 
 
 
+---
 
 
 
+### props
 
 
 
+```javascript
+var props = extend({
+  tag: String,
+  moveClass: String
+}, transitionProps);
+
+delete props.mode;
+```
 
 
 
+### TransitionGroup
+
+```javascript
+var TransitionGroup = {
+  props: props,
+  
+  render: function render(h){
+    var tag = this.tag || this.$vnode.data.tag || 'span';
+    var map = Object.create(null);
+    var prevChildren = this.prevChildren = this.children;
+    var rawChildren = this.$slots.default || [];
+    var children  = this.children = [];
+    var transitionData = extractTransitionData(this);
+    
+    for(var i = 0; i < rawChildren.length; i++){
+      var c = rawChildren[i];
+      if(c.tag){
+        if(c.key != null && String(c.key).indexOf('__vlist') !== 0){
+          children.push(c);
+          map[c.key] = c;
+          (c.data || (c.data = {})).transition = transitionData;
+        } else{
+          var opts = c.componentOptions;
+          var name = opts ? (opts.Ctor.options.name || opts.tag || '') : c.tag;
+          warn(('<transition-group> children must be keyed: <' + name + '>'));
+        }
+      }
+    }
+    
+    if(prevChildren){
+      var kept = [];
+      var removed = [];
+      for(var i$1 = 0; i$1 < prevChildren.length; i$1++){
+        var c$1 = prevChildren[i$1];
+        c$1.data.transition = transitionData;
+        // getBoundingClientRect()返回一个对象 包含元素各边与页面上边和左边的距离
+        // IE有BUG 默认从(2,2)开始计算
+        c$1.data.pos = c$1.elm.getBoundingClientRect();
+        if(map[c$1.key]){
+          kept.push(c$1);
+        } else{
+          removed.push(c$1);
+        }
+      }
+      this.kept = h(tag, null, kept);
+      this.removed = removed;
+    }
+    return h(tag, null, children);
+  },
+  // beforeUpdate
+  beforeUpdate: function beforeUpdate(){
+    this._patch(this._vnode, this.kept, false, true);
+    this,_vnode = this.kept;
+  },
+  // updated
+  updated: function updated(){
+    var children = this.prevChildren;
+    var moveClass = this.moveClass || ((this.name || 'v') + '-move');
+    if(!children.length || !this.hasMove(children[0].elm, moveClass)){
+      return ;
+    }
+    
+    // 将渲染分为三步执行
+    children.forEach(callPendingCbs);
+    children.forEach(recordPosition);
+    children.forEach(applyTranslation);
+    
+    // 强制重排
+    var body = document.body;
+    var f = body.offsetHeight;
+    
+    children.forEach(function(c){
+      if(c.data.moved){
+        var el = c.elm;
+        var s = el.style;
+        addTransitionClass(el, moveClass);
+        s.transform = s.WebkitTransform = s.transitionDuration = '';
+        el.addEventListener(transitionEndEvent, el._moveCb = function cb(e){
+          if(!e || /transform$/.test(e.propertyName)){
+            el.removeEventListener(transitionEndEvent, cb);
+            el._moveCb = null;
+            removeTransitionClass(el, moveClass);
+          }
+        });
+      }
+    });
+  },
+  // methods
+  methods: {
+    hasMove: function hasMove(el, moveClass){
+      if(!hasTransition){
+        return false;
+      }
+      if(this._hasMove != null){
+        return this._hasMove;
+      }
+      // 
+      var clone = el.cloneNode();
+      if(el._transitionClasses){
+        el._transitionClasses.forEach(function(cls){ removeClass(clone, cls); });
+      }
+      addClass(clone, moveClass);
+      clone.style.display = 'none';
+      this.$el.appendChild(clone);
+      var info = getTransitionInfo(clone);
+      this.$el.removeChild(clone);
+      return (this._hasMove = info.hasTransform);
+    }
+  }
+};
+```
 
 
 
+#### callPendingCbs
+
+```javascript
+function callPendingCbs(c){
+  if(c.elm._moveCb){
+    c.elm._moveCb();
+  }
+  if(c.elm._enterCb){
+    c.elm._enterCb();
+  }
+}
+```
 
 
+
+#### recordPosition
+
+```javascript
+function recordPosition(c){
+  // 获取新位置
+  c.data.newPos = c.elm.getBoundingClientRect();
+}
+```
+
+
+
+#### applyTranslation
+
+```javascript
+function applyTranslation(c){
+  var oldPos = c.data.pos;
+  var newPos = c.data.newPos;
+  var dx = oldPos.left - newPos.left;
+  var dy = oldPos.top - newPos.top;
+  if(dx || dy){
+    c.data.moved = true;
+    var s = c.elm.style;
+    s.transform = s.WebkitTransform = 'translate(' + dx + 'px,' + dy + 'px)';
+    s.transitionDuration = '0s';
+  }
+}
+```
 
 
 
