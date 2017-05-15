@@ -988,13 +988,74 @@ function processComponent(el){
 ```javascript
 function processAttrs(el){
   var list = el.attrsList;
-  var i, l, name, rawName, value, modifier, isProp;
+  var i, l, name, rawName, value, modifiers, isProp;
   for(i = 0, l = list.length; i < l; i++){
     name = rawName = list[i].name;
     value = list[i].value;
     if(dirRE.test(name)){
       // 标记
       el.hasBindings = true;
+      // 修改
+      modifiers = parseModifiers(name);
+      if(modifiers){
+        name = name.replace(modifierRE, '');
+      }
+      // v-bind
+      if(bindRE.test(name)){
+        name = name.replace(bindRE, '');
+        value = parseFilters(value);
+        isProp = false;
+        if(modifiers){
+          if(modifiers.prop){
+            isProp = true;
+            name = camelize(name);
+            if( name === 'innerHtml' ){ name = 'innerHTML'; }
+          }
+          if(modifiers.camel){
+            name = camelize(name);
+          }
+          if(modifiers.sync){
+            addHandler(
+              el,('update:' + (camelize(name))), genAssignmentCode(value, '$event')
+            );
+          }
+        }
+        if(isProp || platformMustUseProp(el.tag, el.attrsMap.type, name)){
+          addProp(el, name, value);
+        } else{
+          addAttr(el, name, value);
+        }
+      }
+      // v-on
+      else if(onRE.test(name)){
+        name = name.replace(onRE, '');
+        addHandler(el, name, value, modifiers, false, warn$2);
+      }
+      // 普通指令
+      else{
+        name = name.replace(dirRE, '');
+        var argMatch = name.match(argRE);
+        var arg = argMatch && argMatch[1];
+        if(arg){
+          name = name.slice(0, -(arg.length + 1));
+        }
+        addDirective(el, name, rawName, value, arg, modifiers);
+        if('development' !== 'production' && name === 'model'){
+          checkForAliasModel(el, value);
+        }
+      }
+    } else{
+      // 文字属性
+      var expression = parseText(value, delimiters);
+      if(expression){
+        warn$2(
+          name + '="' + value + '": ' + 
+          'Interpolation inside attributes has been removed. ' + 
+          'Use v-bind or the colon shorthand instead. For example, ' + 
+          'instead of <div id="{{ val }}">, use <div :id="val">.'
+        );
+      }
+      addAttr(el, name, JSON.stringify(value));
     }
   }
 }
@@ -1002,25 +1063,117 @@ function processAttrs(el){
 
 
 
+### checkInFor
+
+```javascript
+function checkInFor(el){
+  var parent = el;
+  while(parent){
+    if(parent.for !== undefined){
+      return true;
+    }
+    parent = parent.parent;
+  }
+  return false;
+}
+```
 
 
 
+### parseModifiers
+
+```javascript
+function parseModifiers(name){
+  var match = name.match(modifierRE);
+  if(match){
+    var ret = {};
+    match.forEach(function(m){ ret[m.slice(1)] = true; });
+    return ret;
+  }
+}
+```
 
 
 
+### makeAttrsMap
+
+```javascript
+function makeAttrsMap(attrs){
+  var map = {};
+  for(var i = 0; l = attrs.length; i < l; i++){
+    if('development' !== 'production' && map[attrs[i].name] && !isIE && !isEdge){
+      warn$2('duplicate attribute: ' + attrs[i].name);
+    }
+    map[attrs[i].name] = attrs[i].value;
+  }
+  return map;
+}
+```
 
 
 
+### isTextTag
+
+```javascript
+function isTextTag(el){
+  return el.tag === 'script' || el.tag === 'style';
+}
+```
 
 
 
+### isForbiddenTag
+
+```javascript
+function isForbiddenTag(el){
+  return (
+    el.tag === 'style' || (el.tag === 'script' && (!el.attrsMap.type || el.attrsMap.type === 'text/javascript'))
+  );
+}
+```
 
 
 
+### guardIESVGBug
+
+```javascript
+var ieNSBug = /^xmlns:NS\d+/;
+var ieNSPrefix = /^NS\d+:/;
+
+function guardIESVGBug(attrs){
+  var res = [];
+  for(var i = 0; i < attrs.length; i++){
+    var attr = attrs[i];
+    if(!ieNSBug.test(attr.name)){
+      attr.name = attr.name.replace(ieNSPrefix, '');
+      res.push(attr);
+    }
+  }
+  return res;
+}
+```
 
 
 
+### checkForAliasModel
 
+```javascript
+function checkForAliasModel(el, value){
+  var _el = el;
+  while(_el){
+    if(_el.for && _el.alias === value){
+      warn$2(
+        '<' + (el.tag) + ' v-model="' + value + '">: ' + 
+        'You are binding v-model directly to a v-for iteration alias. ' + 
+        'This will not be able to modify the v-for source array because ' + 
+        'writing to the alias is like modifying a function local variable. ' + 
+        'Consider using an array of objects and use v-model on an object property instead.'
+      );
+    }
+    _el = _el.parent;
+  }
+}
+```
 
 
 
