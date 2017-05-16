@@ -147,6 +147,8 @@ function isDirectChildOfTemplateFor(node){
 
 
 
+
+
 ---
 
 
@@ -324,11 +326,19 @@ var baseDirectives = {
 
 
 
+
+
 ---
 
 
 
+
+
 ## configurable
+
+
+
+
 
 ```javascript
 var warn$3;
@@ -340,6 +350,8 @@ var staticRenderFns;
 var onceCount;
 var currentOptions;
 ```
+
+
 
 
 
@@ -486,15 +498,340 @@ function genIfConditions(conditions){
 
 
 
+### genFor
+
+```javascript
+function genFor(el){
+  var exp = el.for;
+  var alias = el.alias;
+  var iterator1 = el.iterator1 ? (',' + (el.iterator1)) : '';
+  var iterator2 = el.iterator2 ? (',' + (el.iterator2)) : '';
+  
+  if('development' !== 'production' && maybeComponent(el) && el.tag !== 'slot' && el.tag !== 'template' && !el.key){
+    warn$3(
+      '<' + (el.tag) + ' v-for="' + alias + ' in ' + exp + '">: component lists rendered with ' + 
+      'v-for should have explicit keys. ' + 
+      'See https://vuejs.org/guide/list.html#key for more info.',
+      true
+    );
+  }
+  // 防递归
+  el.forProcessed = true;
+  return '_l((' + exp + '),' + 
+    'function(' + alias + iterator1 + iterator2 + '){' + 
+    'return ' + (genElement(el)) + 
+    '})';
+}
+```
+
+
+
+### genData
+
+```javascript
+function genData(el){
+  var data = '{';
+  
+  // 指令
+  var dirs = genDirectives(el);
+  if(dirs) { data += dirs + ','; }
+  
+  // key
+  if(el.key){
+    data += 'key:' + (el.key) + ',';
+  }
+  // ref
+  if(el.ref){
+    data += 'ref:' + (el.ref) + ',';
+  }
+  if(el.refInFor){
+    data += 'refInForL:true;';
+  }
+  // pre
+  if(el.pre){
+    data += 'pre:true,';
+  }
+  //
+  if(el.component){
+    data += 'tag:"' + (el.tag) + '",';
+  }
+  //
+  for(var i = 0; i < dataGenFns.length; i++){
+    data += dataGenFns[i](el);
+  }
+  // attr
+  if(el.attrs){
+    data += 'attrs:{' + (genProps(el.attrs)) + '},';
+  }
+  // DOM props
+  if(el.props){
+    data += 'domProps:{' + (genProps(el.props)) + '},';
+  }
+  // 事件处理
+  if(el.events){
+    data += (genHandlers(el.events, false, warn$3)) + ',';
+  }
+  if(el.nativeEvents){
+    data += (genHandlers(el.nativeEvents, true, warn$3)) + ',';
+  }
+  // slot
+  if(el.slotTarget){
+    data += 'slot:' + (el.slotTarget) + ',';
+  }
+  // scoped slot
+  if(el.scopedSlots){
+    data += (genScopedSlots(el.scopedSlots)) + ',';
+  }
+  // v-model组件
+  if(el.model){
+    data += 'model:{value:' + (el.model.value) + ',callback:' + (el.model.callback) + ',expression:' + (el.model.expression) + '},';
+  }
+  // inline-template
+  if(el.inlineTemplate){
+    var inlineTemplate = genInlineTemplate(el);
+    if(inlineTemplate){
+      data += inlineTemplate + ',';
+    }
+  }
+  // 去掉最后的逗号闭合大括号
+  data = data.replace(/,$/,'') + '}';
+  // v-bind
+  if(el.wrapData){
+    data = el.wrapData(data);
+  }
+  return data;
+}
+```
+
+
+
+### genDirectives
+
+```javascript
+function genDirectives(el){
+  var dirs = el.directives;
+  if(!dirs) { return; }
+  var res = 'directives:[';
+  var hasRuntime = false;
+  var i, l, dir, needRuntime;
+  for(var i = 0, l = dirs.length; i < l; i++){
+    dir = dirs[i];
+    needRuntime = true;
+    var gen = platformDirectives$1[dir.name] || baseDirectives[dir.name];
+    if(gen){
+      needRuntime = !!gen(el, dir, warn$3);
+    }
+    if(needRuntime){
+      hasRuntime = true;
+      res += '{name:"' + (dir.name) + '",rawName:"' + (dir.rawName) + '"' + (dir.value ? (',value:(' + (dir.value) + '),expression:' + (JSON.stringify(dir.value))) : '') + (dir.arg ? (',arg:"' + (dir.arg) + '"') : '') + (dir.modifiers ? (',modifiers:' + (JSON.stringify(dir.modifiers))) : '') + '},';
+    }
+  }
+  if(hasRuntime){
+    return res.slice(0, -1) + ']';
+  }
+}
+```
+
+
+
+### genInlineTemplate
+
+```javascript
+function genInlineTemplate(el){
+  var ast = el.children[0];
+  if('development' !== 'production' && (el.children.length > 1 || ast.type !== 1)){
+    warn$3('Inline-template components must have exactly one child element.');
+  }
+  if(ast.type === 1){
+    var inlineRenderFns = generate(ast, currentOptions);
+    return ('inlineTemplate:{render:function(){' + (inlineRenderFns.render) + '},staticRenderFns:[' + (inlineRenderFns.staticRenderFns.map(function(code){ reutrn ('function(){' + code +'}'); }).join(',')) + ']}');
+  }
+}
+```
+
+
+
+### genScopedSlots
+
+```javascript
+function genScopedSlots(slots){
+  return ('scopedSlots:_u([' + (Object.keys(slots).map(function(key) { return genScopedSlot(key, slots[key]); }).join(',')) + '])')
+}
+```
+
+
+
+### genScopedSlot
+
+```javascript
+function genScopedSlot(key, el){
+  return '[' + key + ',function(' + (String(el.attrsMap.scope)) + '){' + 
+    'return ' + (el.tag === 'template' ? 
+                genChildren(el) || 'void 0') : 
+                 genElement(el) + '}]';
+}
+```
+
+
+
+### genChildren
+
+```javascript
+function genChildren(el, checkSkip){
+  var children = el.children;
+  if(children.length){
+    var el$1 = children[0];
+    // 优化简单的v-for
+    if(children.length === 1 && el$1.for && el$1.tag !== 'template' && el$1.tag !== 'slot'){
+      return genElement(el$1);
+    }
+    var normalizationType = checkSkip ? getNormalizationType(children) : 0;
+    return ('[' + (children.map(genNode).join(',')) + ']' + (normalizationType ? (',' + normalizationType) : ''));
+  }
+}
+```
 
 
 
 
 
+---
 
 
 
 
+
+## normaliaztion
+
+
+
+
+
+### getNormalizationType
+
+```javascript
+function getNormalizationType(children){
+  var res = 0;
+  for(var i = 0; i < children.length; i++){
+    var el = children[i];
+    if(el.type !== 1){
+      continue;
+    }
+    if(needsNormalization(el) || (el.ifConditions && el.ifConditions.some(function(c) { return needsNormalization(c.block); }))){
+      res = 2;
+      break;
+    }
+    if(maybeComponent(el) || (el.ifConditions && el.ifConditions.some(function(c) { return maybeComponent(c.block); }))){
+      res = 1;
+    }
+  }
+  return res;
+}
+```
+
+
+
+### needsNormalization
+
+```javascript
+function needsNormalization(el){
+  return el.for !== undefined || el.tag  === 'template' || el.tag === 'slot';
+}
+```
+
+
+
+### maybeComponent
+
+```javascript
+function maybeComponent(el){
+  return !isPlatformReservedTag$1(el.tag);
+}
+```
+
+
+
+### genNode
+
+```javascript
+function genNode(node){
+  if(node.type === 1){
+    return genElement(node);
+  } else{
+    return genText(node);
+  }
+}
+```
+
+
+
+### genText
+
+```javascript
+function genText(text){
+  return ('_v(' + (text.type === 2 ? text.expression : transformSpecialNewlines(JSON.stringify(text.text))) + ')');
+}
+```
+
+
+
+### genSlot
+
+```javascript
+function genSlot(el){
+  var slotName = el.slotName || '"default"';
+  var children = genChildren(el);
+  var res = '_t(' + slotName + (children ? (',' + children) : '');
+  var attrs = el.attrs && ('{' + (el.attrs.map(function(a){ return ((camelize(a.name)) + ':' + (a.value)); }).join(',')) + '}');
+  var bind$$1 = el.attrsMap['v-bind'];
+  if((attrs || bind$$1) && !children){
+    res += ',null';
+  }
+  if(attrs){
+    res += ',' + attrs;
+  }
+  if(bind$$1){
+    res += (attrs ? '' : ',null') + ',' + bind$$1;
+  }
+  return res + ')';
+}
+```
+
+
+
+### genComponent
+
+```javascript
+function genComponent(componentName, el){
+  var children = el.inlineTemplate ? null : genChilaren(el, true);
+  return ('_c(' + componentName + ',' + (genData(el)) + (children ? (',' + children) : '') + ')');
+}
+```
+
+
+
+### genProps
+
+```javascript
+function genProps(props){
+  var res = '';
+  for(var i = 0; i < props.length; i++){
+    var prop =props[i];
+    res += '"' + (prop.name) + '":' + (transformSpecialNewlines(prop.value)) + ',';
+  }
+  return res.slice(0, -1);
+}
+```
+
+
+
+### transformSpecialNewLines
+
+```javascript
+function transformSpecialNewlines(text){
+  return text.replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+```
 
 
 
