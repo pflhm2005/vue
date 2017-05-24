@@ -2,5 +2,4 @@
 
 
 
--   源码注释
--   等有时间再作分析
+-   源码详细分析见我的blog：http://www.cnblogs.com/QH-Jimmy/
